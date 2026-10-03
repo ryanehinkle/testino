@@ -280,33 +280,110 @@ async function spin(){
   state.spinning=true;updateUI();
   els.roundStatus.classList.add("spinning");els.roundStatus.innerHTML="<span></span> Wheel spinning";
   setMessage("No more bets. Good luck.");
+
   const idx=cryptographicIndex(WHEEL_ORDER.length), result=WHEEL_ORDER[idx];
   const step=Math.PI*2/WHEEL_ORDER.length;
-  const spins=7+cryptographicIndex(3);
   const startRot=state.wheelRotation;
+
+  // The result is selected first, but the motion into that pocket is intentionally
+  // varied each spin so the wheel never follows the exact same visual path.
+  const wheelSpins=8+cryptographicIndex(4);
   const desiredRotation=((-idx*step)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
   const delta=((desiredRotation-startRot)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
-  const targetRot=startRot+spins*Math.PI*2+delta;
-  const start=performance.now(), duration=5600;
+  const targetRot=startRot+wheelSpins*Math.PI*2+delta;
+
+  const duration=8200+cryptographicIndex(1801);
+  const ballTurns=15+cryptographicIndex(5)+(cryptographicIndex(100)/100);
+  const wobblePhase=(cryptographicIndex(628)/100);
+  const wobbleStrength=4+cryptographicIndex(5);
+  const bounceCount=3+cryptographicIndex(3);
+  const angularKick=(cryptographicIndex(2)?1:-1)*(0.035+cryptographicIndex(45)/1000);
+  const targetAngle=-Math.PI/2;
+  const start=performance.now();
   let lastTick=-1;
+  let lastBounce=-1;
+
+  const smoothstep=t=>t*t*(3-2*t);
+  const clamp01=t=>Math.max(0,Math.min(1,t));
+  const nearestEquivalent=(angle,reference)=>{
+    const tau=Math.PI*2;
+    return angle+Math.round((reference-angle)/tau)*tau;
+  };
+
   await new Promise(resolve=>{
     const frame=now=>{
       const p=Math.min(1,(now-start)/duration);
-      const ease=1-Math.pow(1-p,4);
-      state.wheelRotation=startRot+(targetRot-startRot)*ease;
-      const ballTurns=10.5*(1-Math.pow(p,1.55));
-      const ballAngle=-Math.PI/2-ballTurns*Math.PI*2+idx*step+state.wheelRotation;
-      const radius=330-42*Math.pow(p,2.4);
+
+      // Heavy wheel: quick launch, long mechanical coast.
+      const wheelEase=1-Math.pow(1-p,3.25);
+      state.wheelRotation=startRot+(targetRot-startRot)*wheelEase;
+
+      // Ball begins on the outer track and counter-rotates much faster than the wheel.
+      // Its angular velocity bleeds off gradually rather than stopping abruptly.
+      const ballEase=1-Math.pow(1-p,2.15);
+      let ballAngle=targetAngle+ballTurns*Math.PI*2*(1-ballEase);
+
+      // Tiny irregular lateral movement while the ball is still running the rim.
+      const rimFade=1-smoothstep(clamp01((p-.38)/.34));
+      ballAngle+=Math.sin(p*48+wobblePhase)*0.012*rimFade;
+      ballAngle+=Math.sin(p*17+wobblePhase*.63)*0.007*rimFade;
+
+      // Hold the outer track for most of the spin, then let gravity pull the ball inward.
+      const drop=smoothstep(clamp01((p-.58)/.25));
+      let radius=331-39*drop;
+      radius+=Math.sin(p*42+wobblePhase)*wobbleStrength*(1-drop)*.34;
+
+      // Once the ball leaves the rim it rattles across separators with damped bounces.
+      if(p>.67){
+        const bp=clamp01((p-.67)/.28);
+        const damping=Math.pow(1-bp,1.45);
+        const bounce=Math.abs(Math.sin(bp*Math.PI*bounceCount));
+        radius+=bounce*13*damping;
+        ballAngle+=Math.sin(bp*Math.PI*bounceCount*1.07)*angularKick*damping;
+
+        const bounceIndex=Math.floor(bp*bounceCount*2);
+        if(bounceIndex!==lastBounce && damping>.08){
+          beep(300+bounceIndex*18,.024,.012);
+          lastBounce=bounceIndex;
+        }
+      }
+
+      // In the last portion, capture the ball into the moving winning pocket instead
+      // of snapping it to a fixed screen position.
+      if(p>.79){
+        const capture=smoothstep(clamp01((p-.79)/.21));
+        const pocketAngle=-Math.PI/2+idx*step+state.wheelRotation;
+        const pocketNear=nearestEquivalent(pocketAngle,ballAngle);
+        ballAngle=ballAngle+(pocketNear-ballAngle)*capture;
+        radius=radius+(288-radius)*capture;
+
+        // A final small pocket rattle that dies away naturally.
+        const rattle=Math.sin((p-.79)*Math.PI*34+wobblePhase)*(1-capture);
+        ballAngle+=rattle*.025;
+        radius+=Math.abs(rattle)*4.5;
+      }
+
       drawWheel(state.wheelRotation,ballAngle,radius);
-      const tick=Math.floor(p*38);
-      if(tick!==lastTick&&p<.82){beep(225+tick*2,.018,.009);lastTick=tick;}
-      if(p<1)requestAnimationFrame(frame);else resolve();
-    };requestAnimationFrame(frame);
+
+      const tick=Math.floor(p*58);
+      if(tick!==lastTick&&p<.68){
+        beep(220+Math.floor(p*105),.015,.0075);
+        lastTick=tick;
+      }
+
+      if(p<1)requestAnimationFrame(frame);
+      else resolve();
+    };
+    requestAnimationFrame(frame);
   });
+
   state.wheelRotation%=Math.PI*2;
   drawWheel(state.wheelRotation,-Math.PI/2,288);
   els.winnerNumber.textContent=result;
-  els.winnerBadge.animate([{transform:"scale(.86)"},{transform:"scale(1.09)"},{transform:"scale(1)"}],{duration:520,easing:"cubic-bezier(.2,.8,.2,1)"});
+  els.winnerBadge.animate(
+    [{transform:"scale(.86)"},{transform:"scale(1.09)"},{transform:"scale(1)"}],
+    {duration:520,easing:"cubic-bezier(.2,.8,.2,1)"}
+  );
   beep(result==="0"||result==="00"?650:520,.22,.035);
   settle(result);
   els.roundStatus.classList.remove("spinning");els.roundStatus.innerHTML="<span></span> Place your bets";
