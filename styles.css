@@ -321,3 +321,214 @@ h3{margin:0;font-size:14px;font-weight:600}
   .round-status{font-size:9px}
   .bet-summary{padding:10px}.bet-summary>div{padding:0 7px}.bet-summary strong{font-size:13px}
 }
+
+/* Game navigation */
+.game-switcher{
+  display:flex;align-items:center;gap:5px;padding:5px;
+  border:1px solid var(--line);border-radius:14px;background:rgba(0,0,0,.16)
+}
+.game-tab{
+  min-width:98px;height:40px;padding:0 15px;border:0;border-radius:10px;
+  background:transparent;color:#81978e;font-size:11px;font-weight:700;cursor:pointer;
+  transition:.18s ease
+}
+.game-tab:hover{color:#dce8e3;background:rgba(255,255,255,.04)}
+.game-tab.active{
+  color:#05130e;background:linear-gradient(180deg,#31ce92,#169a69);
+  box-shadow:inset 0 1px rgba(255,255,255,.28),0 5px 16px rgba(18,158,106,.16)
+}
+.game-view{display:none}
+.game-view.active{display:block}
+
+/* Blackjack */
+.blackjack-shell{
+  display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;
+  padding:24px 0 20px
+}
+.bj-header{
+  grid-column:1 / -1;display:flex;align-items:flex-start;justify-content:space-between;
+  padding:0 4px
+}
+.bj-table{
+  position:relative;min-height:690px;padding:78px 34px 28px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.1);border-radius:34px;
+  background:
+    radial-gradient(ellipse at 50% 110%,rgba(27,155,104,.18),transparent 48%),
+    radial-gradient(ellipse at 50% 0%,rgba(255,255,255,.035),transparent 50%),
+    linear-gradient(180deg,#0a3427,#08281f 56%,#071f18);
+  box-shadow:var(--shadow),inset 0 0 0 9px rgba(6,16,13,.25),inset 0 0 80px rgba(0,0,0,.2)
+}
+.bj-table:before{
+  content:"";position:absolute;inset:18px;border:1px solid rgba(226,186,99,.18);
+  border-radius:25px;pointer-events:none
+}
+.bj-table-mark{
+  position:absolute;left:50%;top:31px;transform:translateX(-50%);
+  width:max-content;max-width:80%;text-align:center;color:rgba(224,192,121,.56);pointer-events:none
+}
+.bj-table-mark strong{
+  display:block;font-family:var(--font-display);font-size:15px;letter-spacing:.09em
+}
+.bj-table-mark span{
+  display:block;margin-top:4px;font-size:8px;font-weight:700;letter-spacing:.12em;text-transform:uppercase
+}
+.bj-dealer-zone,.bj-player-zone{position:relative;z-index:1}
+.bj-dealer-zone{min-height:245px}
+.bj-player-zone{min-height:250px;display:flex;align-items:flex-start;justify-content:center}
+.bj-zone-label{
+  min-height:28px;display:flex;justify-content:center;align-items:center;gap:9px;margin-bottom:14px
+}
+.bj-zone-label span{
+  color:#759488;font-size:9px;font-weight:800;letter-spacing:.16em
+}
+.bj-zone-label strong{
+  min-width:34px;padding:4px 8px;border-radius:999px;background:rgba(0,0,0,.2);
+  color:#dfeae5;font-size:11px;text-align:center
+}
+.bj-divider{
+  position:relative;z-index:1;height:1px;margin:5px 6% 24px;
+  background:linear-gradient(90deg,transparent,rgba(226,186,99,.25),transparent)
+}
+.card-row{display:flex;justify-content:center;align-items:center;min-height:170px}
+.playing-card{
+  position:relative;width:105px;height:148px;margin-left:-25px;padding:10px;
+  border-radius:11px;border:1px solid rgba(0,0,0,.28);
+  background:linear-gradient(145deg,#fffdf6,#e7e3d9);
+  color:#18201d;box-shadow:0 12px 24px rgba(0,0,0,.26),inset 0 0 0 1px rgba(255,255,255,.8);
+  transform-origin:50% 100%;animation:dealCard .3s cubic-bezier(.2,.8,.2,1)
+}
+.playing-card:first-child{margin-left:0}
+.playing-card.red-suit{color:#bb343a}
+.playing-card .card-rank{font-family:var(--font-display);font-size:24px;font-weight:700;line-height:.9}
+.playing-card .card-suit{font-size:18px;line-height:1;margin-top:4px}
+.playing-card .card-center{
+  position:absolute;inset:0;display:grid;place-items:center;font-size:38px;opacity:.9
+}
+.playing-card.back{
+  background:
+    linear-gradient(45deg,rgba(255,255,255,.06) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.06) 75%),
+    linear-gradient(45deg,rgba(255,255,255,.06) 25%,#0c6146 25%,#0c6146 75%,rgba(255,255,255,.06) 75%);
+  background-position:0 0,7px 7px;background-size:14px 14px;border:5px solid #e6dfcf;
+  box-shadow:0 12px 24px rgba(0,0,0,.3),inset 0 0 0 2px #0a3729
+}
+.playing-card.back:after{
+  content:"T";position:absolute;inset:17px;display:grid;place-items:center;
+  border:1px solid rgba(229,191,104,.5);color:#dcb763;font-family:var(--font-display);font-size:31px
+}
+@keyframes dealCard{
+  from{opacity:0;transform:translate(55px,-45px) rotate(8deg) scale(.88)}
+  to{opacity:1;transform:none}
+}
+.bj-hands{
+  width:100%;display:flex;align-items:flex-start;justify-content:center;gap:18px;flex-wrap:wrap
+}
+.bj-hand{
+  position:relative;min-width:190px;max-width:310px;flex:1 1 190px;padding:13px 12px 11px;
+  border:1px solid transparent;border-radius:18px;transition:.2s ease
+}
+.bj-hand.active{
+  border-color:rgba(46,215,149,.35);background:rgba(23,171,111,.07);
+  box-shadow:inset 0 0 24px rgba(27,176,116,.04)
+}
+.bj-hand.done{opacity:.72}
+.bj-hand-head{
+  display:flex;align-items:center;justify-content:center;gap:7px;margin-bottom:10px;color:#8ba299;
+  font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase
+}
+.bj-hand-head strong{
+  color:#eef5f2;padding:3px 7px;border-radius:999px;background:rgba(0,0,0,.22);font-size:10px
+}
+.bj-hand .card-row{min-height:143px}
+.bj-hand .playing-card{width:88px;height:125px;padding:8px;margin-left:-26px}
+.bj-hand .playing-card:first-child{margin-left:0}
+.bj-hand .playing-card .card-rank{font-size:20px}
+.bj-hand .playing-card .card-suit{font-size:15px}
+.bj-hand .playing-card .card-center{font-size:31px}
+.bj-hand-result{text-align:center;margin-top:7px;min-height:17px;font-size:10px;font-weight:700;color:#b7c8c1}
+.bj-hand-result.win{color:#58d9a4}.bj-hand-result.loss{color:#d17478}.bj-hand-result.push{color:#e5c777}
+.bj-table-controls{position:relative;z-index:2;margin-top:5px;text-align:center}
+.bj-action-message{min-height:23px;color:#9bb0a8;font-size:11px}
+.bj-action-row,.bj-insurance-row{
+  display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px
+}
+.bj-insurance-row{display:none}
+.bj-insurance-row.show{display:flex}
+.bj-insurance-row>span{width:100%;font-size:11px;color:#d6c392;margin-bottom:2px}
+.bj-action{
+  min-width:86px;height:42px;padding:0 14px;border-radius:11px;
+  border:1px solid rgba(255,255,255,.12);background:rgba(4,17,13,.58);color:#dfe9e5;
+  font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
+  transition:.15s ease
+}
+.bj-action:hover:not(:disabled){background:rgba(255,255,255,.08);transform:translateY(-1px)}
+.bj-action.primary{background:#169a69;border-color:#27be85;color:#04110c}
+.bj-action.danger{color:#d9989b}
+.bj-action:disabled{opacity:.25;cursor:not-allowed}
+.bj-side-panel{display:flex;flex-direction:column;gap:14px}
+.bj-stats,.bj-betting-panel,.bj-rules-card,.bj-history-card{
+  border:1px solid var(--line);border-radius:19px;
+  background:linear-gradient(180deg,rgba(15,32,27,.95),rgba(8,20,16,.96));
+  box-shadow:0 14px 35px rgba(0,0,0,.18)
+}
+.bj-stats{display:grid;grid-template-columns:repeat(3,1fr);padding:15px 8px}
+.bj-stats>div{text-align:center;padding:0 8px;border-right:1px solid var(--line)}
+.bj-stats>div:last-child{border-right:0}
+.bj-stats small{display:block;color:var(--muted);font-size:7px;font-weight:800;letter-spacing:.11em}
+.bj-stats strong{display:block;margin-top:5px;font-size:12px;white-space:nowrap}
+.bj-betting-panel,.bj-rules-card,.bj-history-card{padding:17px}
+.bj-chips{gap:6px;margin-top:17px}
+.bj-chips .chip{width:48px;height:48px}
+.bj-chips .chip span{width:29px;height:29px;font-size:9px}
+.bj-bet-actions{display:flex;align-items:center;gap:8px;margin-top:16px}
+.bj-bet-actions .text-button{margin-right:auto}
+.bj-deal-button{height:43px;min-width:130px}
+.bj-rule-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+.bj-rule-grid>div{
+  padding:9px;border-radius:10px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05)
+}
+.bj-rule-grid strong{display:block;color:#d9ba70;font-size:11px}
+.bj-rule-grid span{display:block;margin-top:2px;color:#81958d;font-size:8px;line-height:1.3}
+.bj-history{display:flex;flex-direction:column;gap:7px;margin-top:13px}
+.bj-history-item{
+  display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:9px 10px;
+  border-radius:10px;background:rgba(255,255,255,.025);font-size:9px
+}
+.bj-history-item span{color:#8fa39b}
+.bj-history-item strong.win{color:#54d59f}.bj-history-item strong.loss{color:#d4787c}.bj-history-item strong.push{color:#ddc170}
+.bj-rules-strip{margin-bottom:0}
+
+@media(max-width:1120px){
+  .blackjack-shell{grid-template-columns:1fr}
+  .bj-side-panel{display:grid;grid-template-columns:1fr 1fr}
+  .bj-stats{grid-column:1 / -1}
+}
+@media(max-width:840px){
+  .game-switcher{order:3;width:100%;justify-content:center;margin-top:9px}
+  .topbar{height:auto;min-height:76px;flex-wrap:wrap;padding:12px 0}
+  .game-tab{flex:1}
+}
+@media(max-width:720px){
+  .blackjack-shell{padding-top:14px;gap:13px}
+  .bj-header{padding:0 3px}
+  .bj-table{min-height:610px;padding:72px 15px 22px;border-radius:21px}
+  .bj-table:before{inset:10px;border-radius:15px}
+  .bj-table-mark{top:26px}
+  .bj-side-panel{grid-template-columns:1fr}
+  .bj-stats{grid-column:auto}
+  .playing-card{width:82px;height:116px;margin-left:-23px;padding:8px}
+  .playing-card .card-rank{font-size:19px}.playing-card .card-suit{font-size:14px}.playing-card .card-center{font-size:29px}
+  .bj-hand{min-width:145px;padding-left:5px;padding-right:5px}
+  .bj-hand .playing-card{width:73px;height:104px;margin-left:-25px}
+  .bj-action{min-width:74px;padding:0 11px}
+}
+@media(max-width:440px){
+  .game-switcher{gap:3px;padding:4px}
+  .game-tab{min-width:0;height:36px}
+  .bj-table{padding-left:9px;padding-right:9px}
+  .bj-table-mark strong{font-size:12px}.bj-table-mark span{font-size:7px}
+  .bj-hands{gap:6px}
+  .bj-hand{min-width:132px}
+  .bj-hand .playing-card{width:66px;height:94px;margin-left:-27px}
+  .bj-hand .playing-card .card-rank{font-size:17px}
+  .bj-hand .playing-card .card-center{font-size:25px}
+}
