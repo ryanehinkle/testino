@@ -282,10 +282,11 @@ async function spin(){
   setMessage("No more bets. Good luck.");
   const idx=cryptographicIndex(WHEEL_ORDER.length), result=WHEEL_ORDER[idx];
   const step=Math.PI*2/WHEEL_ORDER.length;
-  const targetPocketAngle=-Math.PI/2+idx*step;
   const spins=7+cryptographicIndex(3);
   const startRot=state.wheelRotation;
-  const targetRot=startRot+spins*Math.PI*2-targetPocketAngle-Math.PI/2;
+  const desiredRotation=((-idx*step)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+  const delta=((desiredRotation-startRot)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+  const targetRot=startRot+spins*Math.PI*2+delta;
   const start=performance.now(), duration=5600;
   let lastTick=-1;
   await new Promise(resolve=>{
