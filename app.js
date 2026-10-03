@@ -17,7 +17,23 @@ const state = {
   wheelRotation:0,
   restingPocket:null,
   sound:true,
-  lastWin:0
+  lastWin:0,
+  game:"roulette",
+  blackjack:{
+    shoe:[],
+    phase:"betting",
+    selectedChip:25,
+    bet:0,
+    betHistory:[],
+    insurance:0,
+    hands:[],
+    activeHand:0,
+    dealer:[],
+    history:[],
+    handCount:0,
+    roundStartBankroll:0,
+    lastResult:"—"
+  }
 };
 
 const els = {
@@ -49,7 +65,32 @@ const els = {
   toastNumber:document.getElementById("toastNumber"),
   toastLabel:document.getElementById("toastLabel"),
   toastMessage:document.getElementById("toastMessage"),
-  canvas:document.getElementById("rouletteWheel")
+  canvas:document.getElementById("rouletteWheel"),
+  rouletteGame:document.getElementById("rouletteGame"),
+  blackjackGame:document.getElementById("blackjackGame"),
+  brandGameLabel:document.getElementById("brandGameLabel"),
+  bjStatus:document.getElementById("bjStatus"),
+  dealerCards:document.getElementById("dealerCards"),
+  dealerTotal:document.getElementById("dealerTotal"),
+  playerHands:document.getElementById("playerHands"),
+  bjActionMessage:document.getElementById("bjActionMessage"),
+  bjActionRow:document.getElementById("bjActionRow"),
+  bjInsuranceRow:document.getElementById("bjInsuranceRow"),
+  bjBetDisplay:document.getElementById("bjBetDisplay"),
+  bjLastResult:document.getElementById("bjLastResult"),
+  bjShoeDisplay:document.getElementById("bjShoeDisplay"),
+  bjClearBetButton:document.getElementById("bjClearBetButton"),
+  bjUndoBetButton:document.getElementById("bjUndoBetButton"),
+  dealButton:document.getElementById("dealButton"),
+  hitButton:document.getElementById("hitButton"),
+  standButton:document.getElementById("standButton"),
+  doubleButton:document.getElementById("doubleButton"),
+  splitButton:document.getElementById("splitButton"),
+  surrenderButton:document.getElementById("surrenderButton"),
+  insuranceButton:document.getElementById("insuranceButton"),
+  noInsuranceButton:document.getElementById("noInsuranceButton"),
+  bjHistory:document.getElementById("bjHistory"),
+  bjHandCount:document.getElementById("bjHandCount")
 };
 const ctx = els.canvas.getContext("2d");
 
@@ -97,6 +138,7 @@ function updateUI(){
   els.clearBetsButton.disabled=state.spinning||t<=0;
   els.undoButton.disabled=state.spinning||state.betHistory.length===0;
   els.spinButtonSub.textContent=state.spinning?"Ball in motion…":t>0?money(t)+" on the table":"Place a bet to spin";
+  updateBlackjackUI();
   document.querySelectorAll(".bet-cell").forEach(cell=>{
     const key=cell.dataset.key;
     const bet=state.bets.get(key);
@@ -413,16 +455,423 @@ async function spin(){
   els.roundStatus.classList.remove("spinning");els.roundStatus.innerHTML="<span></span> Place your bets";
   state.spinning=false;updateUI();
 }
+
+// ------------------------- BLACKJACK -------------------------
+const BJ_SUITS=["♠","♥","♦","♣"];
+const BJ_RANKS=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+const bj=state.blackjack;
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+function bjRand(max){ return cryptographicIndex(max); }
+
+function buildBlackjackShoe(){
+  const shoe=[];
+  for(let deck=0;deck<6;deck++){
+    for(const suit of BJ_SUITS){
+      for(const rank of BJ_RANKS) shoe.push({rank,suit});
+    }
+  }
+  for(let i=shoe.length-1;i>0;i--){
+    const j=bjRand(i+1);
+    [shoe[i],shoe[j]]=[shoe[j],shoe[i]];
+  }
+  bj.shoe=shoe;
+}
+
+function bjDraw(){
+  if(!bj.shoe.length) buildBlackjackShoe();
+  return bj.shoe.pop();
+}
+
+function bjCardBaseValue(card){
+  if(card.rank==="A")return 11;
+  if(["K","Q","J"].includes(card.rank))return 10;
+  return Number(card.rank);
+}
+
+function bjHandValue(cards){
+  let total=0,aces=0;
+  cards.forEach(card=>{total+=bjCardBaseValue(card);if(card.rank==="A")aces++;});
+  let soft=aces>0;
+  while(total>21&&aces>0){total-=10;aces--;soft=aces>0;}
+  return {total,soft};
+}
+
+function bjNatural(hand){
+  return hand.cards.length===2&&!hand.fromSplit&&bjHandValue(hand.cards).total===21;
+}
+
+function bjCanSplit(hand){
+  if(!hand||hand.cards.length!==2||hand.status!=="playing"||bj.hands.length>=4)return false;
+  if(hand.splitAces)return false;
+  return hand.cards[0].rank===hand.cards[1].rank&&state.bankroll>=hand.bet;
+}
+
+function bjCardHTML(card,hidden=false){
+  if(hidden)return '<div class="playing-card back" aria-label="Face-down card"></div>';
+  const red=card.suit==="♥"||card.suit==="♦";
+  return '<div class="playing-card'+(red?' red-suit':'')+'" aria-label="'+card.rank+' of '+card.suit+'">'+
+    '<div class="card-rank">'+card.rank+'</div><div class="card-suit">'+card.suit+'</div>'+
+    '<div class="card-center">'+card.suit+'</div></div>';
+}
+
+function renderBlackjack(){
+  const hideHole=["dealing","insurance","player"].includes(bj.phase);
+  els.dealerCards.innerHTML=bj.dealer.map((card,i)=>bjCardHTML(card,hideHole&&i===1)).join("");
+  if(!bj.dealer.length){
+    els.dealerCards.innerHTML='<div class="history-empty">Dealer is waiting.</div>';
+    els.dealerTotal.textContent="—";
+  }else if(hideHole&&bj.dealer.length>1){
+    els.dealerTotal.textContent=String(bjCardBaseValue(bj.dealer[0]));
+  }else{
+    const dv=bjHandValue(bj.dealer);
+    els.dealerTotal.textContent=String(dv.total)+(dv.soft&&dv.total<=21?" soft":"");
+  }
+
+  if(!bj.hands.length){
+    els.playerHands.innerHTML='<div class="history-empty">Place a wager to begin a hand.</div>';
+  }else{
+    els.playerHands.innerHTML=bj.hands.map((hand,index)=>{
+      const hv=bjHandValue(hand.cards);
+      const active=bj.phase==="player"&&index===bj.activeHand&&hand.status==="playing";
+      const done=hand.status!=="playing";
+      let label=hand.resultText||"";
+      let tone=hand.resultTone||"";
+      const title=bj.hands.length>1?"HAND "+(index+1):"YOUR HAND";
+      return '<div class="bj-hand'+(active?' active':'')+(done?' done':'')+'">'+
+        '<div class="bj-hand-head"><span>'+title+'</span><strong>'+hv.total+(hv.soft&&hv.total<=21?' soft':'')+'</strong><span>'+money(hand.bet)+'</span></div>'+
+        '<div class="card-row">'+hand.cards.map(c=>bjCardHTML(c,false)).join("")+'</div>'+
+        '<div class="bj-hand-result '+tone+'">'+label+'</div></div>';
+    }).join("");
+  }
+}
+
+function updateBlackjackUI(){
+  if(!els.bjBetDisplay)return;
+  const active=bj.hands[bj.activeHand];
+  els.bjBetDisplay.textContent=money(bj.bet);
+  els.bjLastResult.textContent=bj.lastResult;
+  const decks=(bj.shoe.length/52);
+  els.bjShoeDisplay.textContent=bj.shoe.length?decks.toFixed(1)+" decks":"6 decks";
+  els.bjHandCount.textContent=bj.handCount+(bj.handCount===1?" hand":" hands");
+
+  const betting=bj.phase==="betting";
+  document.querySelectorAll("#bjChips .chip").forEach(c=>c.disabled=!betting);
+  els.bjClearBetButton.disabled=!betting||bj.bet<=0;
+  els.bjUndoBetButton.disabled=!betting||!bj.betHistory.length;
+  els.dealButton.disabled=!betting||bj.bet<=0;
+  els.bjActionRow.style.display=bj.phase==="player"?"flex":"none";
+  els.bjInsuranceRow.classList.toggle("show",bj.phase==="insurance");
+
+  const canAct=bj.phase==="player"&&active?.status==="playing";
+  els.hitButton.disabled=!canAct;
+  els.standButton.disabled=!canAct;
+  els.doubleButton.disabled=!canAct||active.cards.length!==2||state.bankroll<active.bet||active.splitAces;
+  els.splitButton.disabled=!canAct||!bjCanSplit(active);
+  els.surrenderButton.disabled=!canAct||bj.hands.length!==1||active.cards.length!==2||active.fromSplit;
+  els.insuranceButton.disabled=bj.phase!=="insurance"||state.bankroll<bj.hands[0].bet/2;
+
+  let status="Place your bet";
+  if(bj.phase==="dealing")status="Dealing";
+  else if(bj.phase==="insurance")status="Insurance";
+  else if(bj.phase==="player")status="Your turn";
+  else if(bj.phase==="dealer")status="Dealer's turn";
+  els.bjStatus.innerHTML="<span></span> "+status;
+  els.bjStatus.classList.toggle("spinning",["dealing","dealer"].includes(bj.phase));
+
+  renderBlackjack();
+}
+
+function bjSetMessage(text){ els.bjActionMessage.textContent=text; }
+
+function bjPlaceChip(value){
+  if(bj.phase!=="betting")return;
+  if(state.bankroll<value){bjSetMessage("Not enough bankroll for that chip.");beep(170,.1,.03);return;}
+  state.bankroll-=value;
+  bj.bet+=value;
+  bj.betHistory.push(value);
+  bjSetMessage(money(bj.bet)+" wagered.");
+  beep(335,.035,.016);
+  updateUI();
+}
+
+function bjUndoBet(){
+  if(bj.phase!=="betting")return;
+  const value=bj.betHistory.pop();if(!value)return;
+  bj.bet-=value;state.bankroll+=value;
+  bjSetMessage(bj.bet?money(bj.bet)+" wagered.":"Choose your wager and deal.");
+  updateUI();
+}
+
+function bjClearBet(){
+  if(bj.phase!=="betting")return;
+  state.bankroll+=bj.bet;bj.bet=0;bj.betHistory=[];
+  bjSetMessage("Bet cleared.");
+  updateUI();
+}
+
+async function bjDealInitial(){
+  if(bj.phase!=="betting"||bj.bet<=0)return;
+  if(bj.shoe.length<78)buildBlackjackShoe();
+
+  bj.phase="dealing";
+  bj.roundStartBankroll=state.bankroll+bj.bet;
+  bj.insurance=0;
+  bj.hands=[{cards:[],bet:bj.bet,status:"playing",fromSplit:false,splitAces:false,resultText:"",resultTone:""}];
+  bj.dealer=[];
+  bj.activeHand=0;
+  bjSetMessage("Cards out.");
+  updateUI();
+
+  const sequence=[
+    ()=>bj.hands[0].cards.push(bjDraw()),
+    ()=>bj.dealer.push(bjDraw()),
+    ()=>bj.hands[0].cards.push(bjDraw()),
+    ()=>bj.dealer.push(bjDraw())
+  ];
+  for(const deal of sequence){
+    deal();renderBlackjack();beep(390,.025,.009);await wait(230);
+  }
+
+  const dealerUp=bj.dealer[0];
+  if(dealerUp.rank==="A"){
+    bj.phase="insurance";
+    bjSetMessage(bjNatural(bj.hands[0])?"Blackjack. Take insurance for even money, or decline.":"Dealer shows an Ace. Insurance is half your main bet.");
+    updateUI();
+    return;
+  }
+
+  if(bjCardBaseValue(dealerUp)===10&&bjHandValue(bj.dealer).total===21){
+    await bjDealerBlackjack();
+    return;
+  }
+
+  if(bjNatural(bj.hands[0])){
+    await bjPayNatural();
+    return;
+  }
+
+  bj.phase="player";
+  bjSetMessage("Hit, stand, double, split, or surrender when available.");
+  updateUI();
+}
+
+async function bjResolveInsurance(take){
+  if(bj.phase!=="insurance")return;
+  const hand=bj.hands[0];
+  if(take){
+    const cost=hand.bet/2;
+    if(state.bankroll<cost)return;
+    state.bankroll-=cost;bj.insurance=cost;
+    bjSetMessage("Insurance placed. Dealer checks the hole card…");
+  }else{
+    bjSetMessage("No insurance. Dealer checks the hole card…");
+  }
+  bj.phase="dealing";updateUI();await wait(450);
+
+  if(bjHandValue(bj.dealer).total===21){
+    await bjDealerBlackjack();
+    return;
+  }
+
+  if(bj.insurance>0){
+    // Insurance lost when dealer does not have blackjack.
+    bjSetMessage("No dealer blackjack. Insurance loses.");
+  }
+  if(bjNatural(hand)){
+    await wait(300);await bjPayNatural();return;
+  }
+  bj.phase="player";
+  bjSetMessage("No dealer blackjack. Play your hand.");
+  updateUI();
+}
+
+async function bjDealerBlackjack(){
+  bj.phase="dealer";renderBlackjack();await wait(450);
+  const hand=bj.hands[0];
+  let returned=0;
+  if(bj.insurance>0){
+    returned+=bj.insurance*3;
+    state.bankroll+=bj.insurance*3;
+  }
+  if(bjNatural(hand)){
+    returned+=hand.bet;state.bankroll+=hand.bet;
+    hand.resultText="Push — both blackjack";hand.resultTone="push";
+  }else{
+    hand.resultText="Dealer blackjack";hand.resultTone="loss";
+  }
+  await bjFinishRound("Dealer blackjack");
+}
+
+async function bjPayNatural(){
+  const hand=bj.hands[0];
+  state.bankroll+=hand.bet*2.5;
+  hand.resultText="Blackjack · 3:2";hand.resultTone="win";
+  bj.phase="dealer";renderBlackjack();beep(690,.18,.03);await wait(500);
+  await bjFinishRound("Blackjack");
+}
+
+async function bjHit(){
+  const hand=bj.hands[bj.activeHand];
+  if(bj.phase!=="player"||!hand||hand.status!=="playing")return;
+  hand.cards.push(bjDraw());beep(400,.025,.009);renderBlackjack();await wait(260);
+  const v=bjHandValue(hand.cards).total;
+  if(v>21){
+    hand.status="bust";hand.resultText="Bust";hand.resultTone="loss";
+    await bjAdvanceHand();
+  }else if(v===21){
+    hand.status="stood";hand.resultText="21";hand.resultTone="";
+    await bjAdvanceHand();
+  }else updateUI();
+}
+
+async function bjStand(){
+  const hand=bj.hands[bj.activeHand];
+  if(bj.phase!=="player"||!hand)return;
+  hand.status="stood";hand.resultText="Standing";hand.resultTone="";
+  await bjAdvanceHand();
+}
+
+async function bjDouble(){
+  const hand=bj.hands[bj.activeHand];
+  if(bj.phase!=="player"||!hand||hand.cards.length!==2||state.bankroll<hand.bet||hand.splitAces)return;
+  state.bankroll-=hand.bet;hand.bet*=2;hand.doubled=true;
+  bjSetMessage("Double down — one card.");
+  hand.cards.push(bjDraw());beep(430,.03,.012);renderBlackjack();updateUI();await wait(300);
+  const v=bjHandValue(hand.cards).total;
+  if(v>21){hand.status="bust";hand.resultText="Doubled · bust";hand.resultTone="loss";}
+  else{hand.status="stood";hand.resultText="Doubled · "+v;hand.resultTone="";}
+  await bjAdvanceHand();
+}
+
+async function bjSplit(){
+  const hand=bj.hands[bj.activeHand];
+  if(bj.phase!=="player"||!bjCanSplit(hand))return;
+  state.bankroll-=hand.bet;
+  const [first,second]=hand.cards;
+  const isAces=first.rank==="A";
+  const h1={cards:[first],bet:hand.bet,status:"playing",fromSplit:true,splitAces:isAces,resultText:"",resultTone:""};
+  const h2={cards:[second],bet:hand.bet,status:"playing",fromSplit:true,splitAces:isAces,resultText:"",resultTone:""};
+  bj.hands.splice(bj.activeHand,1,h1,h2);
+  bjSetMessage(isAces?"Split Aces receive one card each.":"Hand split.");
+  updateUI();await wait(180);
+  h1.cards.push(bjDraw());beep(390,.025,.009);renderBlackjack();await wait(220);
+  h2.cards.push(bjDraw());beep(390,.025,.009);renderBlackjack();await wait(260);
+
+  if(isAces){
+    h1.status="stood";h2.status="stood";
+    h1.resultText=String(bjHandValue(h1.cards).total);h2.resultText=String(bjHandValue(h2.cards).total);
+    await bjAdvanceHand(true);
+  }else{
+    updateUI();
+  }
+}
+
+async function bjSurrender(){
+  const hand=bj.hands[bj.activeHand];
+  if(bj.phase!=="player"||!hand||bj.hands.length!==1||hand.cards.length!==2||hand.fromSplit)return;
+  state.bankroll+=hand.bet/2;
+  hand.status="surrender";hand.resultText="Surrender · half returned";hand.resultTone="loss";
+  await bjFinishRound("Surrender");
+}
+
+async function bjAdvanceHand(forceDealer=false){
+  let next=bj.activeHand+1;
+  while(next<bj.hands.length&&bj.hands[next].status!=="playing")next++;
+  if(!forceDealer&&next<bj.hands.length){
+    bj.activeHand=next;
+    bjSetMessage("Playing hand "+(next+1)+" of "+bj.hands.length+".");
+    updateUI();return;
+  }
+  await bjDealerPlay();
+}
+
+async function bjDealerPlay(){
+  const live=bj.hands.some(h=>!["bust","surrender"].includes(h.status));
+  if(!live){await bjFinishRound("All hands complete");return;}
+  bj.phase="dealer";bjSetMessage("Dealer reveals.");renderBlackjack();updateUI();await wait(500);
+
+  while(true){
+    const dv=bjHandValue(bj.dealer);
+    if(dv.total>=17)break; // S17: stand on both hard and soft 17
+    bj.dealer.push(bjDraw());beep(380,.025,.009);renderBlackjack();await wait(420);
+  }
+  await wait(250);
+  bjSettleHands();
+  await bjFinishRound("Round complete");
+}
+
+function bjSettleHands(){
+  const dealerValue=bjHandValue(bj.dealer).total;
+  const dealerBust=dealerValue>21;
+  for(const hand of bj.hands){
+    if(hand.status==="surrender"||hand.status==="bust")continue;
+    const player=bjHandValue(hand.cards).total;
+    if(dealerBust){
+      state.bankroll+=hand.bet*2;hand.resultText="Win · dealer bust";hand.resultTone="win";
+    }else if(player>dealerValue){
+      state.bankroll+=hand.bet*2;hand.resultText="Win";hand.resultTone="win";
+    }else if(player===dealerValue){
+      state.bankroll+=hand.bet;hand.resultText="Push";hand.resultTone="push";
+    }else{
+      hand.resultText="Loss";hand.resultTone="loss";
+    }
+    hand.status="done";
+  }
+}
+
+async function bjFinishRound(label){
+  bj.phase="dealer";renderBlackjack();updateUI();
+  await wait(350);
+  const net=state.bankroll-bj.roundStartBankroll;
+  const tone=net>0?"win":net<0?"loss":"push";
+  const result=net>0?"+"+money(net):net<0?"−"+money(Math.abs(net)):"Push";
+  bj.lastResult=result;
+  bj.handCount++;
+  bj.history.unshift({label,result,tone});
+  if(bj.history.length>6)bj.history.length=6;
+  bjSetMessage(net>0?"Round won "+money(net)+".":net<0?"Round lost "+money(Math.abs(net))+".":"Round pushed.");
+  if(net>0)beep(650,.16,.028);
+  else if(net<0)beep(190,.14,.02);
+  renderBjHistory();
+
+  bj.phase="betting";
+  bj.bet=0;bj.betHistory=[];bj.insurance=0;
+  updateUI();
+}
+
+function renderBjHistory(){
+  if(!bj.history.length){
+    els.bjHistory.innerHTML='<div class="history-empty">Your blackjack results will appear here.</div>';
+    return;
+  }
+  els.bjHistory.innerHTML=bj.history.map(h=>
+    '<div class="bj-history-item"><span>'+h.label+'</span><strong class="'+h.tone+'">'+h.result+'</strong></div>'
+  ).join("");
+}
+
+function switchGame(game){
+  if(!["roulette","blackjack"].includes(game))return;
+  state.game=game;
+  document.querySelectorAll(".game-tab").forEach(btn=>btn.classList.toggle("active",btn.dataset.game===game));
+  els.rouletteGame.classList.toggle("active",game==="roulette");
+  els.blackjackGame.classList.toggle("active",game==="blackjack");
+  els.brandGameLabel.textContent=game==="roulette"?"Roulette":"Blackjack";
+  if(game==="blackjack")updateBlackjackUI();
+}
+
 function startSession(name,bankroll){
   state.player=name.trim()||"Player";state.bankroll=bankroll;state.startBankroll=bankroll;
   state.bets.clear();state.betHistory=[];state.spinHistory=[];state.lastWin=0;state.spinning=false;state.restingPocket=null;
+  bj.phase="betting";bj.bet=0;bj.betHistory=[];bj.insurance=0;bj.hands=[];bj.dealer=[];bj.history=[];bj.handCount=0;bj.lastResult="—";
+  buildBlackjackShoe();renderBjHistory();
   els.lastResultDisplay.textContent="—";els.winnerNumber.textContent="—";
   renderHistory();updateUI();setMessage("Choose a chip and place your bets.");
   els.setupModal.classList.add("hidden");els.app.setAttribute("aria-hidden","false");
 }
 function resetSession(){
-  if(state.spinning)return;
-  state.bankroll+=totalBet();state.bets.clear();state.betHistory=[];
+  if(state.spinning||["dealing","insurance","player","dealer"].includes(bj.phase))return;
+  state.bankroll+=totalBet()+bj.bet;state.bets.clear();state.betHistory=[];bj.bet=0;bj.betHistory=[];
   els.setupModal.classList.remove("hidden");els.app.setAttribute("aria-hidden","true");
   els.playerName.value=state.player;els.startingBankroll.value=Math.round(state.startBankroll||1000);
   setTimeout(()=>els.playerName.focus(),100);
@@ -450,6 +899,24 @@ els.soundButton.addEventListener("click",()=>{
 });
 els.newSessionButton.addEventListener("click",resetSession);
 
+document.querySelectorAll(".game-tab").forEach(btn=>btn.addEventListener("click",()=>switchGame(btn.dataset.game)));
+document.getElementById("bjChips").addEventListener("click",e=>{
+  const chip=e.target.closest(".chip");if(!chip||bj.phase!=="betting")return;
+  bj.selectedChip=Number(chip.dataset.value);
+  document.querySelectorAll("#bjChips .chip").forEach(c=>c.classList.toggle("selected",c===chip));
+  bjPlaceChip(bj.selectedChip);
+});
+els.bjUndoBetButton.addEventListener("click",bjUndoBet);
+els.bjClearBetButton.addEventListener("click",bjClearBet);
+els.dealButton.addEventListener("click",bjDealInitial);
+els.hitButton.addEventListener("click",bjHit);
+els.standButton.addEventListener("click",bjStand);
+els.doubleButton.addEventListener("click",bjDouble);
+els.splitButton.addEventListener("click",bjSplit);
+els.surrenderButton.addEventListener("click",bjSurrender);
+els.insuranceButton.addEventListener("click",()=>bjResolveInsurance(true));
+els.noInsuranceButton.addEventListener("click",()=>bjResolveInsurance(false));
+
 function drawCurrentWheel(){
   const restingAngle=state.restingPocket===null
     ? null
@@ -469,6 +936,6 @@ function idleWheelLoop(now){
 }
 
 window.addEventListener("resize",drawCurrentWheel);
-buildTable();drawCurrentWheel();updateUI();renderHistory();
+buildTable();buildBlackjackShoe();drawCurrentWheel();updateUI();renderHistory();renderBjHistory();switchGame("roulette");
 requestAnimationFrame(idleWheelLoop);
 setTimeout(()=>els.playerName.focus(),100);
