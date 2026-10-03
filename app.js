@@ -282,133 +282,110 @@ async function spin(){
   setMessage("No more bets. Good luck.");
 
   const idx=cryptographicIndex(WHEEL_ORDER.length), result=WHEEL_ORDER[idx];
-  const step=Math.PI*2/WHEEL_ORDER.length;
+  const tau=Math.PI*2;
+  const step=tau/WHEEL_ORDER.length;
   const startRot=state.wheelRotation;
 
-  // The result is selected first, but the motion into that pocket is intentionally
-  // varied each spin so the wheel never follows the exact same visual path.
+  // Pick the result first, then build ONE continuous physical-looking path that
+  // naturally ends at that pocket. There is no late target/capture correction.
   const wheelSpins=8+cryptographicIndex(4);
-  const desiredRotation=((-idx*step)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
-  const delta=((desiredRotation-startRot)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
-  const targetRot=startRot+wheelSpins*Math.PI*2+delta;
+  const desiredRotation=((-idx*step)%tau+tau)%tau;
+  const delta=((desiredRotation-startRot)%tau+tau)%tau;
+  const targetRot=startRot+wheelSpins*tau+delta;
 
-  const duration=8200+cryptographicIndex(1801);
-  const ballTurns=15+cryptographicIndex(5)+(cryptographicIndex(100)/100);
-  const wobblePhase=(cryptographicIndex(628)/100);
-  const wobbleStrength=4+cryptographicIndex(5);
-  const bounceCount=3+cryptographicIndex(3);
-  const angularKick=(cryptographicIndex(2)?1:-1)*(0.035+cryptographicIndex(45)/1000);
+  const duration=9000+cryptographicIndex(1801);
+  const ballTurns=17+cryptographicIndex(5)+(cryptographicIndex(100)/100);
+  const ballTravel=ballTurns*tau;
   const targetAngle=-Math.PI/2;
+  const wobblePhase=cryptographicIndex(628)/100;
+  const wobbleStrength=3.5+cryptographicIndex(5);
+  const bounceCount=3+cryptographicIndex(3);
+  const bounceDirection=cryptographicIndex(2)?1:-1;
   const start=performance.now();
   let lastTick=-1;
   let lastBounce=-1;
-  let captureTurnOffset=null;
 
-  const smoothstep=t=>t*t*(3-2*t);
   const clamp01=t=>Math.max(0,Math.min(1,t));
-  const nearestEquivalent=(angle,reference)=>{
-    const tau=Math.PI*2;
-    return angle+Math.round((reference-angle)/tau)*tau;
-  };
+  const smoothstep=t=>t*t*(3-2*t);
+  const smootherstep=t=>t*t*t*(t*(t*6-15)+10);
 
   await new Promise(resolve=>{
     const frame=now=>{
       const p=Math.min(1,(now-start)/duration);
 
-      // Heavy wheel: quick launch, long mechanical coast.
-      const wheelEase=1-Math.pow(1-p,3.25);
-      state.wheelRotation=startRot+(targetRot-startRot)*wheelEase;
+      // The wheel itself coasts continuously to its exact final orientation.
+      const wheelProgress=1-Math.pow(1-p,3.35);
+      state.wheelRotation=startRot+(targetRot-startRot)*wheelProgress;
 
-      // Ball begins on the outer track and counter-rotates much faster than the wheel.
-      // Its angular velocity bleeds off gradually rather than stopping abruptly.
-      const ballEase=1-Math.pow(1-p,2.15);
-      let ballAngle=targetAngle+ballTurns*Math.PI*2*(1-ballEase);
+      // Continuous ball trajectory. This equation already ends EXACTLY at the
+      // final pocket with zero angular velocity, so nothing ever has to snap.
+      // Slowing begins well before the final seconds and becomes progressively softer.
+      const ballProgress=1-Math.pow(1-p,2.55);
+      let ballAngle=targetAngle+ballTravel*(1-ballProgress);
 
-      // Tiny irregular lateral movement while the ball is still running the rim.
-      const rimFade=1-smoothstep(clamp01((p-.38)/.34));
-      ballAngle+=Math.sin(p*48+wobblePhase)*0.012*rimFade;
-      ballAngle+=Math.sin(p*17+wobblePhase*.63)*0.007*rimFade;
+      // Subtle imperfections while running the outer rim. Both effects fade to
+      // exactly zero smoothly before the ball is near its final pocket.
+      const rimFade=1-smoothstep(clamp01((p-.38)/.30));
+      ballAngle+=Math.sin(p*51+wobblePhase)*.011*rimFade;
+      ballAngle+=Math.sin(p*18.5+wobblePhase*.61)*.006*rimFade;
 
-      // Hold the outer track for most of the spin, then let gravity pull the ball inward.
-      const drop=smoothstep(clamp01((p-.58)/.25));
-      let radius=331-39*drop;
-      radius+=Math.sin(p*42+wobblePhase)*wobbleStrength*(1-drop)*.34;
+      // Gradual inward drop. Use smootherstep so radial velocity is also smooth
+      // at the beginning and end of the transition.
+      const drop=smootherstep(clamp01((p-.50)/.36));
+      let radius=331+(288-331)*drop;
+      radius+=Math.sin(p*43+wobblePhase)*wobbleStrength*(1-drop)*.30;
 
-      // Once the ball leaves the rim it rattles across separators with damped bounces.
-      if(p>.67){
-        const bp=clamp01((p-.67)/.28);
-        const damping=Math.pow(1-bp,1.45);
-        const bounce=Math.abs(Math.sin(bp*Math.PI*bounceCount));
-        radius+=bounce*13*damping;
-        ballAngle+=Math.sin(bp*Math.PI*bounceCount*1.07)*angularKick*damping;
+      // Separator rattles live ON TOP of the same continuous path. The envelope
+      // ramps in and out smoothly, so these can never introduce a position jump.
+      const bounceIn=smoothstep(clamp01((p-.58)/.08));
+      const bounceOut=1-smoothstep(clamp01((p-.88)/.10));
+      const bounceEnvelope=bounceIn*bounceOut;
+      if(bounceEnvelope>0){
+        const phase=clamp01((p-.58)/.40);
+        const decay=Math.pow(1-phase,1.15);
+        const angularRattle=Math.sin(phase*Math.PI*bounceCount*2+wobblePhase);
+        const radialRattle=Math.abs(Math.sin(phase*Math.PI*bounceCount+wobblePhase*.45));
+        ballAngle+=angularRattle*.034*bounceEnvelope*decay*bounceDirection;
+        radius+=radialRattle*10*bounceEnvelope*decay;
 
-        const bounceIndex=Math.floor(bp*bounceCount*2);
-        if(bounceIndex!==lastBounce && damping>.08){
-          beep(300+bounceIndex*18,.024,.012);
+        const bounceIndex=Math.floor(phase*bounceCount*2);
+        if(bounceIndex!==lastBounce && p<.88){
+          beep(300+bounceIndex*17,.022,.011);
           lastBounce=bounceIndex;
         }
       }
 
-      // In the last portion, let the ball roll through and around the winning pocket
-      // with damped overshoot before it finally comes to rest.
-      if(p>.69){
-        const cp=clamp01((p-.69)/.31);
-        const capture=smoothstep(cp);
-        const pocketAngle=-Math.PI/2+idx*step+state.wheelRotation;
-
-        // Lock onto one continuous, unwrapped copy of the target pocket when
-        // capture begins. Keeping that same 2π branch for the rest of the spin
-        // prevents the "nearest angle" from suddenly switching and teleporting
-        // the ball across the wheel near the end.
-        if(captureTurnOffset===null){
-          const tau=Math.PI*2;
-          captureTurnOffset=Math.round((ballAngle-pocketAngle)/tau)*tau;
-        }
-        const continuousPocket=pocketAngle+captureTurnOffset;
-
-        // Start steering earlier and very gently. The ball still overshoots and
-        // rocks around the pocket, but its angular position remains continuous.
-        const steer=Math.pow(capture,1.35);
-        const settleOsc=Math.sin(cp*Math.PI*5.1+wobblePhase)*Math.pow(1-cp,1.7);
-        const tangentialSlip=Math.sin(cp*Math.PI*2.15+wobblePhase*.7)*Math.pow(1-cp,2.15);
-        const targetPocketAngle=continuousPocket + settleOsc*.07 + tangentialSlip*.025;
-        ballAngle=ballAngle+(targetPocketAngle-ballAngle)*steer;
-
-        // Let the ball sink down into the pocket more gradually, with a small
-        // vertical bounce that fades away rather than instantly locking radius.
-        const pocketBounce=Math.abs(Math.sin(cp*Math.PI*4.6+wobblePhase*.4))*Math.pow(1-cp,1.8);
-        const targetRadius=288 + pocketBounce*7;
-        radius=radius+(targetRadius-radius)*capture;
-
-        // Very subtle final micro-rattle near complete rest.
-        if(cp>.76){
-          const micro=(1-cp);
-          ballAngle+=Math.sin(cp*Math.PI*18+wobblePhase)*.012*micro;
-          radius+=Math.abs(Math.sin(cp*Math.PI*15+wobblePhase))*2.2*micro;
-        }
+      // Final pocket roll: tiny damped rocking motion, again with a smooth
+      // envelope that reaches exactly zero at p=1.
+      const settleIn=smoothstep(clamp01((p-.78)/.08));
+      const settleEnvelope=settleIn*Math.pow(1-p,2.25);
+      if(settleEnvelope>0){
+        ballAngle+=Math.sin((p-.78)*Math.PI*15+wobblePhase)*.13*settleEnvelope;
+        radius+=Math.abs(Math.sin((p-.78)*Math.PI*12+wobblePhase*.7))*8*settleEnvelope;
       }
 
       drawWheel(state.wheelRotation,ballAngle,radius);
 
-      const tick=Math.floor(p*58);
-      if(tick!==lastTick&&p<.68){
-        beep(220+Math.floor(p*105),.015,.0075);
+      const tick=Math.floor(p*62);
+      if(tick!==lastTick&&p<.70){
+        beep(220+Math.floor(p*100),.014,.007);
         lastTick=tick;
       }
 
       if(p<1){
         requestAnimationFrame(frame);
-      } else {
-        // Hold the resting ball briefly so the eye perceives a completed roll-to-stop
-        // before the result UI changes.
-        setTimeout(resolve,220);
+      }else{
+        // This is already the exact end position rendered by the same continuous
+        // trajectory; the pause simply lets the completed stop register visually.
+        setTimeout(resolve,260);
       }
     };
     requestAnimationFrame(frame);
   });
 
-  state.wheelRotation%=Math.PI*2;
-  drawWheel(state.wheelRotation,-Math.PI/2,288);
+  state.wheelRotation%=tau;
+  // Repaint the mathematically identical final state; no visible relocation occurs.
+  drawWheel(state.wheelRotation,targetAngle,288);
   els.winnerNumber.textContent=result;
   els.winnerBadge.animate(
     [{transform:"scale(.86)"},{transform:"scale(1.09)"},{transform:"scale(1)"}],
