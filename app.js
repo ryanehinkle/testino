@@ -1,6 +1,9 @@
 const WHEEL_ORDER = ["0","28","9","26","30","11","7","20","32","17","5","22","34","15","3","24","36","13","1","00","27","10","25","29","12","8","19","31","18","6","21","33","16","4","23","35","14","2"];
 const REDS = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 const BLACKS = new Set([2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]);
+const TAU = Math.PI*2;
+const WHEEL_STEP = TAU/WHEEL_ORDER.length;
+const IDLE_WHEEL_SPEED = 0.14; // radians per second — a slow continuous dealer-style rotation
 
 const state = {
   player:"",
@@ -12,6 +15,7 @@ const state = {
   spinHistory:[],
   spinning:false,
   wheelRotation:0,
+  restingPocket:null,
   sound:true,
   lastWin:0
 };
@@ -282,21 +286,31 @@ async function spin(){
   setMessage("No more bets. Good luck.");
 
   const idx=cryptographicIndex(WHEEL_ORDER.length), result=WHEEL_ORDER[idx];
-  const tau=Math.PI*2;
-  const step=tau/WHEEL_ORDER.length;
   const startRot=state.wheelRotation;
+  const duration=9200+cryptographicIndex(1801);
+  const durationSec=duration/1000;
+  const extraWheelTurns=1.75+cryptographicIndex(126)/100;
+  const extraWheelTravel=extraWheelTurns*TAU;
 
-  // Pick the result first, then build ONE continuous physical-looking path that
-  // naturally ends at that pocket. There is no late target/capture correction.
-  const wheelSpins=8+cryptographicIndex(4);
-  const desiredRotation=((-idx*step)%tau+tau)%tau;
-  const delta=((desiredRotation-startRot)%tau+tau)%tau;
-  const targetRot=startRot+wheelSpins*tau+delta;
+  // The wheel never stops. During a spin it gets an extra smooth push, then
+  // naturally returns to the exact same slow idle angular velocity.
+  const endRot=startRot+(IDLE_WHEEL_SPEED*durationSec)+extraWheelTravel;
 
-  const duration=9000+cryptographicIndex(1801);
-  const ballTurns=17+cryptographicIndex(5)+(cryptographicIndex(100)/100);
-  const ballTravel=ballTurns*tau;
-  const targetAngle=-Math.PI/2;
+  // Begin from the ball's real current screen position if it is already resting
+  // in a pocket. First spin gets a randomized starting point on the outer track.
+  const startBallAngle=state.restingPocket===null
+    ? (cryptographicIndex(6283)/1000)
+    : (-Math.PI/2+state.restingPocket*WHEEL_STEP+startRot);
+
+  // The winning pocket can finish anywhere around the wheel. Choose an unwrapped
+  // target many counter-clockwise revolutions away so one continuous curve lands
+  // exactly inside that moving pocket with no pointer and no late correction.
+  const targetPocketEnd=-Math.PI/2+idx*WHEEL_STEP+endRot;
+  const ballTurns=15+cryptographicIndex(6);
+  let finalBallAngle=targetPocketEnd;
+  while(finalBallAngle>=startBallAngle) finalBallAngle-=TAU;
+  finalBallAngle-=ballTurns*TAU;
+
   const wobblePhase=cryptographicIndex(628)/100;
   const wobbleStrength=3.5+cryptographicIndex(5);
   const bounceCount=3+cryptographicIndex(3);
@@ -309,59 +323,63 @@ async function spin(){
   const smoothstep=t=>t*t*(3-2*t);
   const smootherstep=t=>t*t*t*(t*(t*6-15)+10);
 
+  // The ball is no longer considered parked while it is in motion.
+  state.restingPocket=null;
+
   await new Promise(resolve=>{
     const frame=now=>{
-      const p=Math.min(1,(now-start)/duration);
+      const elapsed=Math.min(duration,now-start);
+      const p=elapsed/duration;
+      const elapsedSec=elapsed/1000;
 
-      // The wheel itself coasts continuously to its exact final orientation.
-      const wheelProgress=1-Math.pow(1-p,3.35);
-      state.wheelRotation=startRot+(targetRot-startRot)*wheelProgress;
+      // Smootherstep contributes zero extra velocity at both ends, so the wheel
+      // enters and exits the spin at precisely its idle rotation speed.
+      state.wheelRotation=startRot+(IDLE_WHEEL_SPEED*elapsedSec)+extraWheelTravel*smootherstep(p);
 
-      // Continuous ball trajectory. This equation already ends EXACTLY at the
-      // final pocket with zero angular velocity, so nothing ever has to snap.
-      // Slowing begins well before the final seconds and becomes progressively softer.
-      const ballProgress=1-Math.pow(1-p,2.55);
-      let ballAngle=targetAngle+ballTravel*(1-ballProgress);
+      // One trajectory, start to finish. The deceleration is baked into the path
+      // from the beginning and reaches zero relative ball speed at the pocket.
+      const ballProgress=1-Math.pow(1-p,2.65);
+      let ballAngle=startBallAngle+(finalBallAngle-startBallAngle)*ballProgress;
 
-      // Subtle imperfections while running the outer rim. Both effects fade to
-      // exactly zero smoothly before the ball is near its final pocket.
-      const rimFade=1-smoothstep(clamp01((p-.38)/.30));
-      ballAngle+=Math.sin(p*51+wobblePhase)*.011*rimFade;
-      ballAngle+=Math.sin(p*18.5+wobblePhase*.61)*.006*rimFade;
+      // Lift from the previous pocket to the outer rim smoothly, stay on the rim,
+      // then make a long gradual inward descent.
+      const launch=smootherstep(clamp01(p/.13));
+      const drop=smootherstep(clamp01((p-.48)/.40));
+      let radius=288+(331-288)*launch-(331-288)*drop;
 
-      // Gradual inward drop. Use smootherstep so radial velocity is also smooth
-      // at the beginning and end of the transition.
-      const drop=smootherstep(clamp01((p-.50)/.36));
-      let radius=331+(288-331)*drop;
-      radius+=Math.sin(p*43+wobblePhase)*wobbleStrength*(1-drop)*.30;
+      // Small imperfect rim motion that fades out long before final settlement.
+      const rimFade=(1-smoothstep(clamp01((p-.34)/.32)))*launch;
+      ballAngle+=Math.sin(p*49+wobblePhase)*.011*rimFade;
+      ballAngle+=Math.sin(p*18+wobblePhase*.61)*.006*rimFade;
+      radius+=Math.sin(p*41+wobblePhase)*wobbleStrength*rimFade*.28;
 
-      // Separator rattles live ON TOP of the same continuous path. The envelope
-      // ramps in and out smoothly, so these can never introduce a position jump.
-      const bounceIn=smoothstep(clamp01((p-.58)/.08));
-      const bounceOut=1-smoothstep(clamp01((p-.88)/.10));
+      // Damped separator rattles. These only perturb the continuous trajectory;
+      // the envelope returns exactly to zero, so they can never cause a jump.
+      const bounceIn=smoothstep(clamp01((p-.56)/.08));
+      const bounceOut=1-smoothstep(clamp01((p-.88)/.09));
       const bounceEnvelope=bounceIn*bounceOut;
       if(bounceEnvelope>0){
-        const phase=clamp01((p-.58)/.40);
-        const decay=Math.pow(1-phase,1.15);
+        const phase=clamp01((p-.56)/.41);
+        const decay=Math.pow(1-phase,1.2);
         const angularRattle=Math.sin(phase*Math.PI*bounceCount*2+wobblePhase);
         const radialRattle=Math.abs(Math.sin(phase*Math.PI*bounceCount+wobblePhase*.45));
-        ballAngle+=angularRattle*.034*bounceEnvelope*decay*bounceDirection;
-        radius+=radialRattle*10*bounceEnvelope*decay;
+        ballAngle+=angularRattle*.032*bounceEnvelope*decay*bounceDirection;
+        radius+=radialRattle*9*bounceEnvelope*decay;
 
         const bounceIndex=Math.floor(phase*bounceCount*2);
-        if(bounceIndex!==lastBounce && p<.88){
+        if(bounceIndex!==lastBounce&&p<.88){
           beep(300+bounceIndex*17,.022,.011);
           lastBounce=bounceIndex;
         }
       }
 
-      // Final pocket roll: tiny damped rocking motion, again with a smooth
-      // envelope that reaches exactly zero at p=1.
-      const settleIn=smoothstep(clamp01((p-.78)/.08));
-      const settleEnvelope=settleIn*Math.pow(1-p,2.25);
+      // Gentle pocket rocking that dies to exactly zero as the moving target
+      // pocket carries the ball around the wheel.
+      const settleIn=smoothstep(clamp01((p-.76)/.09));
+      const settleEnvelope=settleIn*Math.pow(1-p,2.35);
       if(settleEnvelope>0){
-        ballAngle+=Math.sin((p-.78)*Math.PI*15+wobblePhase)*.13*settleEnvelope;
-        radius+=Math.abs(Math.sin((p-.78)*Math.PI*12+wobblePhase*.7))*8*settleEnvelope;
+        ballAngle+=Math.sin((p-.76)*Math.PI*14+wobblePhase)*.12*settleEnvelope;
+        radius+=Math.abs(Math.sin((p-.76)*Math.PI*11+wobblePhase*.7))*7*settleEnvelope;
       }
 
       drawWheel(state.wheelRotation,ballAngle,radius);
@@ -372,20 +390,19 @@ async function spin(){
         lastTick=tick;
       }
 
-      if(p<1){
-        requestAnimationFrame(frame);
-      }else{
-        // This is already the exact end position rendered by the same continuous
-        // trajectory; the pause simply lets the completed stop register visually.
-        setTimeout(resolve,260);
-      }
+      if(p<1) requestAnimationFrame(frame);
+      else setTimeout(resolve,220);
     };
     requestAnimationFrame(frame);
   });
 
-  state.wheelRotation%=tau;
-  // Repaint the mathematically identical final state; no visible relocation occurs.
-  drawWheel(state.wheelRotation,targetAngle,288);
+  // Park the ball in the actual winning pocket. From this point forward the idle
+  // animation rotates BOTH the wheel and the resting ball together.
+  state.wheelRotation=((endRot%TAU)+TAU)%TAU;
+  state.restingPocket=idx;
+  const restingAngle=-Math.PI/2+idx*WHEEL_STEP+state.wheelRotation;
+  drawWheel(state.wheelRotation,restingAngle,288);
+
   els.winnerNumber.textContent=result;
   els.winnerBadge.animate(
     [{transform:"scale(.86)"},{transform:"scale(1.09)"},{transform:"scale(1)"}],
@@ -398,7 +415,7 @@ async function spin(){
 }
 function startSession(name,bankroll){
   state.player=name.trim()||"Player";state.bankroll=bankroll;state.startBankroll=bankroll;
-  state.bets.clear();state.betHistory=[];state.spinHistory=[];state.lastWin=0;state.spinning=false;
+  state.bets.clear();state.betHistory=[];state.spinHistory=[];state.lastWin=0;state.spinning=false;state.restingPocket=null;
   els.lastResultDisplay.textContent="—";els.winnerNumber.textContent="—";
   renderHistory();updateUI();setMessage("Choose a chip and place your bets.");
   els.setupModal.classList.add("hidden");els.app.setAttribute("aria-hidden","false");
@@ -432,6 +449,26 @@ els.soundButton.addEventListener("click",()=>{
   if(state.sound)beep(450,.05,.02);
 });
 els.newSessionButton.addEventListener("click",resetSession);
-window.addEventListener("resize",()=>drawWheel());
-buildTable();drawWheel();updateUI();renderHistory();
+
+function drawCurrentWheel(){
+  const restingAngle=state.restingPocket===null
+    ? null
+    : -Math.PI/2+state.restingPocket*WHEEL_STEP+state.wheelRotation;
+  drawWheel(state.wheelRotation,restingAngle,state.restingPocket===null?0:288);
+}
+
+let idleLast=performance.now();
+function idleWheelLoop(now){
+  const dt=Math.min(.05,Math.max(0,(now-idleLast)/1000));
+  idleLast=now;
+  if(!state.spinning){
+    state.wheelRotation=(state.wheelRotation+IDLE_WHEEL_SPEED*dt)%TAU;
+    drawCurrentWheel();
+  }
+  requestAnimationFrame(idleWheelLoop);
+}
+
+window.addEventListener("resize",drawCurrentWheel);
+buildTable();drawCurrentWheel();updateUI();renderHistory();
+requestAnimationFrame(idleWheelLoop);
 setTimeout(()=>els.playerName.focus(),100);
