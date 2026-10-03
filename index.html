@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07130f" />
+  <title>Testino Roulette</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <div id="setupModal" class="modal-shell">
+    <form id="setupForm" class="setup-card">
+      <div class="brand-mark" aria-hidden="true">T</div>
+      <p class="eyebrow">WELCOME TO</p>
+      <h1>Testino Roulette</h1>
+      <p class="setup-copy">A polished roulette table built for play money. Set your name and bankroll to take a seat.</p>
+
+      <label for="playerName">Player name</label>
+      <input id="playerName" maxlength="24" autocomplete="name" placeholder="Ryan" required />
+
+      <label for="startingBankroll">Starting bankroll</label>
+      <div class="money-input">
+        <span>$</span>
+        <input id="startingBankroll" type="number" min="1" max="100000000" step="1" inputmode="decimal" value="1000" required />
+      </div>
+
+      <button class="primary-button start-button" type="submit">Take a seat</button>
+      <p class="play-money-note">Play money only — no deposits or real-money wagering.</p>
+    </form>
+  </div>
+
+  <main class="app-shell" id="app" aria-hidden="true">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Testino Roulette home">
+        <span class="brand-mark small">T</span>
+        <span>
+          <strong>Testino</strong>
+          <small>Roulette</small>
+        </span>
+      </a>
+
+      <div class="topbar-actions">
+        <div class="player-pill">
+          <span class="status-dot"></span>
+          <div>
+            <small>PLAYER</small>
+            <strong id="playerDisplay">Guest</strong>
+          </div>
+        </div>
+        <div class="bankroll-pill">
+          <small>BANKROLL</small>
+          <strong id="bankrollDisplay">$0.00</strong>
+        </div>
+        <button class="icon-button" id="soundButton" type="button" aria-label="Toggle sound" title="Toggle sound">♪</button>
+        <button class="icon-button" id="newSessionButton" type="button" aria-label="New session" title="New session">↻</button>
+      </div>
+    </header>
+
+    <section class="game-layout">
+      <div class="wheel-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">AMERICAN ROULETTE</p>
+            <h2>The Wheel</h2>
+          </div>
+          <div class="round-status" id="roundStatus"><span></span> Place your bets</div>
+        </div>
+
+        <div class="wheel-stage">
+          <div class="wheel-glow"></div>
+          <canvas id="rouletteWheel" width="760" height="760" aria-label="American roulette wheel"></canvas>
+          <div class="wheel-pointer" aria-hidden="true"></div>
+          <div class="winner-badge" id="winnerBadge">
+            <small>WINNING NUMBER</small>
+            <strong id="winnerNumber">—</strong>
+          </div>
+        </div>
+
+        <div class="history-wrap">
+          <div class="section-title-row">
+            <h3>Recent spins</h3>
+            <span id="spinCount">0 spins</span>
+          </div>
+          <div class="history" id="history">
+            <div class="history-empty">Your results will appear here.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-panel">
+        <div class="panel-heading table-heading">
+          <div>
+            <p class="eyebrow">TABLE</p>
+            <h2>Place Your Bets</h2>
+          </div>
+          <button id="clearBetsButton" class="text-button" type="button">Clear bets</button>
+        </div>
+
+        <div class="bet-summary">
+          <div>
+            <small>TOTAL BET</small>
+            <strong id="totalBetDisplay">$0.00</strong>
+          </div>
+          <div>
+            <small>LAST RESULT</small>
+            <strong id="lastResultDisplay">—</strong>
+          </div>
+          <div>
+            <small>LAST WIN</small>
+            <strong id="lastWinDisplay">$0.00</strong>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <div id="bettingTable" class="betting-table" aria-label="Roulette betting table"></div>
+        </div>
+
+        <div class="chip-section">
+          <div class="section-title-row">
+            <div>
+              <h3>Chip value</h3>
+              <span>Click a chip, then click the table</span>
+            </div>
+            <button id="undoButton" class="text-button" type="button">Undo</button>
+          </div>
+          <div class="chips" id="chips">
+            <button class="chip chip-1" data-value="1" type="button"><span>$1</span></button>
+            <button class="chip chip-5" data-value="5" type="button"><span>$5</span></button>
+            <button class="chip chip-25 selected" data-value="25" type="button"><span>$25</span></button>
+            <button class="chip chip-100" data-value="100" type="button"><span>$100</span></button>
+            <button class="chip chip-500" data-value="500" type="button"><span>$500</span></button>
+          </div>
+        </div>
+
+        <div id="messageBar" class="message-bar" role="status">
+          <span class="message-icon">i</span>
+          <span id="messageText">Choose a chip and place your bets.</span>
+        </div>
+
+        <button id="spinButton" class="primary-button spin-button" type="button" disabled>
+          <span>SPIN THE WHEEL</span>
+          <small id="spinButtonSub">Place a bet to spin</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="rules-strip">
+      <div>
+        <span class="rule-icon">35×</span>
+        <p><strong>Straight up</strong><small>35:1 payout</small></p>
+      </div>
+      <div>
+        <span class="rule-icon">2×</span>
+        <p><strong>Dozens & columns</strong><small>2:1 payout</small></p>
+      </div>
+      <div>
+        <span class="rule-icon">1×</span>
+        <p><strong>Even money</strong><small>1:1 payout</small></p>
+      </div>
+      <div>
+        <span class="rule-icon">38</span>
+        <p><strong>American wheel</strong><small>0 and 00 included</small></p>
+      </div>
+    </section>
+  </main>
+
+  <div id="resultToast" class="result-toast" aria-live="polite">
+    <div id="toastNumber" class="toast-number">0</div>
+    <div>
+      <small id="toastLabel">WINNING NUMBER</small>
+      <strong id="toastMessage">Black 17</strong>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
