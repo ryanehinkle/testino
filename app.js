@@ -302,6 +302,7 @@ async function spin(){
   const start=performance.now();
   let lastTick=-1;
   let lastBounce=-1;
+  let captureTurnOffset=null;
 
   const smoothstep=t=>t*t*(3-2*t);
   const clamp01=t=>Math.max(0,Math.min(1,t));
@@ -350,18 +351,28 @@ async function spin(){
 
       // In the last portion, let the ball roll through and around the winning pocket
       // with damped overshoot before it finally comes to rest.
-      if(p>.77){
-        const cp=clamp01((p-.77)/.23);
+      if(p>.69){
+        const cp=clamp01((p-.69)/.31);
         const capture=smoothstep(cp);
         const pocketAngle=-Math.PI/2+idx*step+state.wheelRotation;
-        const pocketNear=nearestEquivalent(pocketAngle,ballAngle);
 
-        // Instead of simply lerping to the pocket center, add a decaying angular
-        // oscillation so the ball rolls past center, comes back, and settles.
-        const settleOsc=Math.sin(cp*Math.PI*5.4+wobblePhase)*Math.pow(1-cp,1.65);
-        const tangentialSlip=Math.sin(cp*Math.PI*2.2+wobblePhase*.7)*Math.pow(1-cp,2.1);
-        const targetPocketAngle=pocketNear + settleOsc*.075 + tangentialSlip*.028;
-        ballAngle=ballAngle+(targetPocketAngle-ballAngle)*capture;
+        // Lock onto one continuous, unwrapped copy of the target pocket when
+        // capture begins. Keeping that same 2π branch for the rest of the spin
+        // prevents the "nearest angle" from suddenly switching and teleporting
+        // the ball across the wheel near the end.
+        if(captureTurnOffset===null){
+          const tau=Math.PI*2;
+          captureTurnOffset=Math.round((ballAngle-pocketAngle)/tau)*tau;
+        }
+        const continuousPocket=pocketAngle+captureTurnOffset;
+
+        // Start steering earlier and very gently. The ball still overshoots and
+        // rocks around the pocket, but its angular position remains continuous.
+        const steer=Math.pow(capture,1.35);
+        const settleOsc=Math.sin(cp*Math.PI*5.1+wobblePhase)*Math.pow(1-cp,1.7);
+        const tangentialSlip=Math.sin(cp*Math.PI*2.15+wobblePhase*.7)*Math.pow(1-cp,2.15);
+        const targetPocketAngle=continuousPocket + settleOsc*.07 + tangentialSlip*.025;
+        ballAngle=ballAngle+(targetPocketAngle-ballAngle)*steer;
 
         // Let the ball sink down into the pocket more gradually, with a small
         // vertical bounce that fades away rather than instantly locking radius.
@@ -370,7 +381,7 @@ async function spin(){
         radius=radius+(targetRadius-radius)*capture;
 
         // Very subtle final micro-rattle near complete rest.
-        if(cp>.72){
+        if(cp>.76){
           const micro=(1-cp);
           ballAngle+=Math.sin(cp*Math.PI*18+wobblePhase)*.012*micro;
           radius+=Math.abs(Math.sin(cp*Math.PI*15+wobblePhase))*2.2*micro;
