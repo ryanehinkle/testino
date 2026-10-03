@@ -348,19 +348,33 @@ async function spin(){
         }
       }
 
-      // In the last portion, capture the ball into the moving winning pocket instead
-      // of snapping it to a fixed screen position.
-      if(p>.79){
-        const capture=smoothstep(clamp01((p-.79)/.21));
+      // In the last portion, let the ball roll through and around the winning pocket
+      // with damped overshoot before it finally comes to rest.
+      if(p>.77){
+        const cp=clamp01((p-.77)/.23);
+        const capture=smoothstep(cp);
         const pocketAngle=-Math.PI/2+idx*step+state.wheelRotation;
         const pocketNear=nearestEquivalent(pocketAngle,ballAngle);
-        ballAngle=ballAngle+(pocketNear-ballAngle)*capture;
-        radius=radius+(288-radius)*capture;
 
-        // A final small pocket rattle that dies away naturally.
-        const rattle=Math.sin((p-.79)*Math.PI*34+wobblePhase)*(1-capture);
-        ballAngle+=rattle*.025;
-        radius+=Math.abs(rattle)*4.5;
+        // Instead of simply lerping to the pocket center, add a decaying angular
+        // oscillation so the ball rolls past center, comes back, and settles.
+        const settleOsc=Math.sin(cp*Math.PI*5.4+wobblePhase)*Math.pow(1-cp,1.65);
+        const tangentialSlip=Math.sin(cp*Math.PI*2.2+wobblePhase*.7)*Math.pow(1-cp,2.1);
+        const targetPocketAngle=pocketNear + settleOsc*.075 + tangentialSlip*.028;
+        ballAngle=ballAngle+(targetPocketAngle-ballAngle)*capture;
+
+        // Let the ball sink down into the pocket more gradually, with a small
+        // vertical bounce that fades away rather than instantly locking radius.
+        const pocketBounce=Math.abs(Math.sin(cp*Math.PI*4.6+wobblePhase*.4))*Math.pow(1-cp,1.8);
+        const targetRadius=288 + pocketBounce*7;
+        radius=radius+(targetRadius-radius)*capture;
+
+        // Very subtle final micro-rattle near complete rest.
+        if(cp>.72){
+          const micro=(1-cp);
+          ballAngle+=Math.sin(cp*Math.PI*18+wobblePhase)*.012*micro;
+          radius+=Math.abs(Math.sin(cp*Math.PI*15+wobblePhase))*2.2*micro;
+        }
       }
 
       drawWheel(state.wheelRotation,ballAngle,radius);
@@ -371,8 +385,13 @@ async function spin(){
         lastTick=tick;
       }
 
-      if(p<1)requestAnimationFrame(frame);
-      else resolve();
+      if(p<1){
+        requestAnimationFrame(frame);
+      } else {
+        // Hold the resting ball briefly so the eye perceives a completed roll-to-stop
+        // before the result UI changes.
+        setTimeout(resolve,220);
+      }
     };
     requestAnimationFrame(frame);
   });
