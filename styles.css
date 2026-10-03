@@ -121,11 +121,6 @@ h3{margin:0;font-size:14px;font-weight:600}
   background:rgba(26,195,131,.08);filter:blur(42px);
 }
 #rouletteWheel{position:relative;width:min(100%,560px);height:auto;display:block;filter:drop-shadow(0 22px 28px rgba(0,0,0,.44))}
-.wheel-pointer{
-  position:absolute;top:3.4%;left:50%;z-index:4;transform:translateX(-50%);
-  width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:24px solid #f4d07c;
-  filter:drop-shadow(0 3px 5px rgba(0,0,0,.7))
-}
 .winner-badge{
   position:absolute;display:grid;place-items:center;text-align:center;
   width:105px;height:105px;border-radius:50%;
@@ -295,7 +290,6 @@ h3{margin:0;font-size:14px;font-weight:600}
   .game-layout{grid-template-columns:1fr}
   .wheel-stage{min-height:470px}
   #rouletteWheel{width:min(82vw,530px)}
-  .wheel-pointer{top:1%}
 }
 @media(max-width:720px){
   .app-shell{padding:0 13px 22px}
@@ -310,7 +304,6 @@ h3{margin:0;font-size:14px;font-weight:600}
   .wheel-stage{min-height:auto;padding:18px 0}
   #rouletteWheel{width:min(94vw,500px)}
   .winner-badge{width:82px;height:82px}.winner-badge strong{font-size:25px}
-  .wheel-pointer{top:3%}
   .rules-strip{grid-template-columns:1fr 1fr;padding:9px}
   .rules-strip>div{border:0;padding:9px}
   .chips{gap:7px;justify-content:space-between}
